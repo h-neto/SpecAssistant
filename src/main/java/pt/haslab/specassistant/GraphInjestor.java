@@ -49,12 +49,13 @@ public class GraphInjestor {
         return CompletableFuture.supplyAsync(() -> step.apply(current, ctx)).thenCompose(updatedContext -> CompletableFuture.allOf((modelGetter.apply(current).map(child -> walkModelTree(step, modelGetter, updatedContext, child)).toArray(CompletableFuture[]::new))));
     }
 
-    private static Map<String, ASTEditDiff> getFormulaMapDiff(Map<String, Expr> origin, Map<String, Expr> peer) {
+    private static Float getFormulaMapDiff(Map<String, Expr> origin, Map<String, Expr> peer) {
         return Stream.of(origin.keySet(), peer.keySet())
                 .flatMap(Collection::stream)
                 .collect(Collectors.toSet())
                 .stream()
-                .collect(Collectors.toMap(key -> key, key -> new ASTEditDiff().initFrom(origin.get(key), peer.get(key))));
+                .map(key -> new ASTEditDiff().computeFrom(origin.get(key), peer.get(key)))
+                .reduce(0.0f, Float::sum);
     }
 
     public synchronized ObjectId incrementOrCreateNode(Map<String, String> formula, Boolean valid, ObjectId graph_id, String witness) {
@@ -74,7 +75,7 @@ public class GraphInjestor {
             Map<String, Expr> originParsed = originN.getParsedFormula(Optional.ofNullable(originN.witness).map(Model::getWorld).orElse(world));
             Map<String, Expr> peerParsed = originD.getParsedFormula(Optional.ofNullable(originD.witness).map(Model::getWorld).orElse(world));
 
-            edge.editDistance = getFormulaMapDiff(originParsed, peerParsed).values().stream().map(ASTEditDiff::computeEditDistance).reduce(0.0f, Float::sum);
+            edge.editDistance = getFormulaMapDiff(originParsed, peerParsed);
         } catch (ErrorSyntax e) {
             Log.warn("SYNTAX ERROR WHILE PARSING FORMULA: " + e.getMessage());
         } catch (Err e) {

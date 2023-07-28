@@ -121,8 +121,8 @@ public class HintGenerator {
 
                     Map<String, Expr> otherFormulaExpr = dest_node.getParsedFormula(Optional.ofNullable(dest_node.witness).map(Model::getWorld).orElse(world));
                     for (String s : formula.keySet()) {
-                        ASTEditDiff diff = new ASTEditDiff().initFrom(formulaExpr.get(s), otherFormulaExpr.get(s));
-                        diff.computeEditDistance();
+                        ASTEditDiff diff = new ASTEditDiff();
+                        diff.computeFrom(formulaExpr.get(s), otherFormulaExpr.get(s));
                         return operationToMsg(diff.getFirstEditOperation());
                     }
                 }
@@ -159,8 +159,10 @@ public class HintGenerator {
         if (operation == null)
             return Optional.empty();
         return switch (operation.type) {
-            case "rename", "delete" -> Optional.of(HintMsg.from(operation.target().position(), "Try to change this declaration"));
-            case "insert" -> Optional.of(HintMsg.from(operation.target().position(), "Try adding something to this declaration"));
+            case "rename", "delete" ->
+                    Optional.of(HintMsg.from(operation.target().position(), "Try to change this declaration"));
+            case "insert" ->
+                    Optional.of(HintMsg.from(operation.target().position(), "Try adding something to this declaration"));
             default -> Optional.empty();
         };
     }
