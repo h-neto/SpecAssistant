@@ -1,0 +1,22 @@
+---
+name: "Alloy Specification Assistant"
+description: "A Data-Driven Hint Generation System"
+metadata:
+  keywords:
+  - "specassistant"
+  status: "experimental"
+  built-with-quarkus-core: "3.5.0"
+  extension-dependencies:
+  - "io.quarkus:quarkus-arc"
+  - "io.quarkus:quarkus-core"
+  - "io.quarkus:quarkus-mongodb-client"
+  - "io.quarkus:quarkus-mutiny"
+  - "io.quarkus:quarkus-smallrye-context-propagation"
+  - "io.quarkus:quarkus-vertx"
+  - "io.quarkus:quarkus-netty"
+  - "io.quarkus:quarkus-virtual-threads"
+  - "io.quarkus:quarkus-mutiny-reactive-streams-operators"
+  - "io.quarkus:quarkus-mongodb-panache"
+  - "io.quarkus:quarkus-mongodb-panache-common"
+  - "io.quarkus:quarkus-narayana-jta"
+artifact: "pt.haslab:specassistant::jar:1.0.0"
