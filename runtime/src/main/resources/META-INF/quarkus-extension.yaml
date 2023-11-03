@@ -1,5 +1,4 @@
-name: Alloy Specification Assistant
-description: A Data-Driven Hint Generation System
+name: Specassistant
 metadata:
   keywords:
     - specassistant
