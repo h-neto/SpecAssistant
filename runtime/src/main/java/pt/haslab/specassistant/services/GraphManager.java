@@ -83,6 +83,10 @@ public class GraphManager {
         return challengeRepo.streamByModelId(modelid).map(Challenge::getGraph_id).collect(Collectors.toSet());
     }
 
+    public Set<Challenge> getModelChallenges(String modelid) {
+        return challengeRepo.streamByModelId(modelid).collect(Collectors.toSet());
+    }
+
     public void deleteAllGraphStructures() {
         nodeRepo.deleteAll();
         edgeRepo.deleteAll();

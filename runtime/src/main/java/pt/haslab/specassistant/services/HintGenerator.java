@@ -103,6 +103,11 @@ public class HintGenerator {
         return formulaTransition(challenge.getGraph_id(), formula);
     }
 
+    public Optional<Transition> externalFormulaTransition(CompModule base_world, Challenge challenge, String external_formula) {
+        Map<String, String> formula = formulaExprToString(Node.getNormalizedFormulaFrom(base_world, Map.of(challenge.getCmd_n(), external_formula)));
+        return formulaTransition(challenge.getGraph_id(), formula);
+    }
+
 
     public Optional<Transition> bareTransition(String originId, String command_label, String model) {
         CompModule world = ParseUtil.parseModel(model);

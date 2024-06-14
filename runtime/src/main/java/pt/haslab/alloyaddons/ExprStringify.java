@@ -2,9 +2,13 @@ package pt.haslab.alloyaddons;
 
 import edu.mit.csail.sdg.alloy4.Err;
 import edu.mit.csail.sdg.ast.*;
+import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 import java.util.Objects;
+
+import static edu.mit.csail.sdg.ast.ExprUnary.Op.NOOP;
+import static edu.mit.csail.sdg.ast.ExprUnary.Op.ONE;
 
 public class ExprStringify {
     public static String rawStringify(Expr e) {
@@ -18,6 +22,7 @@ public class ExprStringify {
         return res;
     }
 
+    @RequiredArgsConstructor
     private static class ExprStringifyVisitReturn extends VisitReturn<String> {
 
         @Override

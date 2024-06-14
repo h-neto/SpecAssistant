@@ -23,6 +23,9 @@ import pt.haslab.specassistant.util.FutureUtil;
 import pt.haslab.specassistant.util.Text;
 
 import java.io.*;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
@@ -161,7 +164,7 @@ public class SpecAssistantTestService {
         testRepo.deleteTestsByNotType("TAR");
         map.forEach(this::makeGraphAndChallengesFromCommands);
         fixTestGraphIds();
-        testal();
+        splitDatasetAndTrain();
     }
 
     private void writeSetToFile(Set<String> stringSet, String filePath) {
@@ -200,9 +203,9 @@ public class SpecAssistantTestService {
     }
 
     @SneakyThrows
-    public void retest() {
+    public void testPartitionFromFile(String filename) {
         testRepo.deleteTestsByNotType("TAR");
-        Set<String> testing_dataset = readSetFromFile("testing.txt");
+        Set<String> testing_dataset = readSetFromFile(filename);
 
         Log.trace("Parsing test dataset");
 
@@ -237,7 +240,7 @@ public class SpecAssistantTestService {
 
 
     @SneakyThrows
-    private void testal() {
+    private void splitDatasetAndTrain() {
         Map<String, Set<String>> mToC = challengeRepo.findAll().stream().collect(Collectors.groupingBy(Challenge::getModel_id, Collectors.mapping(Challenge::getCmd_n, Collectors.toSet())));
 
         Log.trace("Splittig testing dataset");
@@ -308,7 +311,14 @@ public class SpecAssistantTestService {
     }
 
     public CompletableFuture<Void> autoSetupJob(List<String> model_ids, String prefix, Predicate<Model> model_filter) {
+        String pol = List.copyOf(PolicyOption.samples.keySet()).get(new Random().nextInt(PolicyOption.samples.size()));
+        return autoSetupJob(model_ids, prefix, pol, model_filter);
+    }
+
+    public CompletableFuture<Void> autoSetupJob(List<String> model_ids, String prefix, String pol, Predicate<Model> model_filter) {
         AtomicLong start = new AtomicLong();
+        AtomicLong middle = new AtomicLong();
+        AtomicLong end = new AtomicLong();
         return CompletableFuture
                 .runAsync(() -> start.set(System.nanoTime()))
                 .thenRun(() -> log.debug("Starting setup for " + prefix + " with model ids " + model_ids))
@@ -316,10 +326,35 @@ public class SpecAssistantTestService {
                 .thenRun(() -> makeGraphAndChallengesFromCommands(prefix, model_ids))
                 .thenRun(() -> log.trace("Scanning models " + model_ids))
                 .thenCompose(nil -> FutureUtil.allFutures(model_ids.stream().map(id -> graphIngestor.parseModelTree(id, model_filter))))
+                .thenRun(() -> middle.set(System.nanoTime()))
                 .thenRun(() -> log.trace("Computing policies for " + prefix))
-                .thenRun(() -> graphManager.getModelGraphs(model_ids.get(0)).forEach(id -> policyManager.computePolicyForGraph(id, PolicyOption.samples.get("TED"))))
-                .thenRun(() -> log.debug("Completed setup for " + prefix + " with model ids " + model_ids + " in " + 1e-9 * (System.nanoTime() - start.get()) + " seconds"))
+                .thenRun(() -> graphManager.getModelGraphs(model_ids.get(0)).forEach(id -> policyManager.computePolicyForGraph(id, PolicyOption.samples.get(pol))))
+                .thenRun(() -> end.set(System.nanoTime()))
+                .thenRun(() -> log.debug("Completed setup for " + prefix + " with model ids " + model_ids + " in " + 1e-9 * (end.get() - start.get()) + " seconds. Appending to summary."))
+                .thenRun(() -> writeLineToCsv(
+                        "summary.csv",
+                        List.of(prefix, model_ids.toString(),
+                                DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.of("UTC")).format(Instant.ofEpochMilli((long) (start.get() * 1e-6))),
+                                String.valueOf(middle.get() - start.get()),
+                                String.valueOf(end.get() - middle.get()),
+                                pol
+                        )))
                 .whenComplete(FutureUtil.log(log));
+    }
+
+    public static void writeLineToCsv(String filePath, List<String> data) {
+        File csvFile = new File(filePath);
+        boolean isNewFile = !csvFile.exists();
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(csvFile, true))) {
+            if (isNewFile) {
+                writer.write("Prefix,IDs,Time,Training-Duration,Policy-Duration,Policy");
+                writer.newLine();
+            }
+            writer.write(String.join(",", data));
+            writer.newLine();
+        } catch (IOException e) {
+        }
     }
 
     @SneakyThrows
@@ -331,7 +366,8 @@ public class SpecAssistantTestService {
     }
 
     public CompletableFuture<Void> computePoliciesForAll(PolicyOption eval) {
-        return FutureUtil.forEachAsync(Graph.findAll().stream().map(x -> (Graph) x), x -> policyManager.computePolicyForGraph(x.id, eval)).whenComplete(FutureUtil.logTrace(log, "Finished computing policies"));
+        return FutureUtil.forEachAsync(Graph.findAll().stream().map(x -> (Graph) x), x -> policyManager.computePolicyForGraph(x.id, eval))
+                .whenComplete(FutureUtil.logTrace(log, "Finished computing policies"));
     }
 
     @SneakyThrows
@@ -342,7 +378,7 @@ public class SpecAssistantTestService {
         // Create graph
         makeGraphAndChallengesFromCommands(prefix, model_ids);
         // Fill graph
-        FutureUtil.forEachAsync(model_ids, id -> graphIngestor.parseModelTree(id, x -> true)).whenComplete(FutureUtil.logTrace(log, "Setup Completed")).get();
+        FutureUtil.runEachAsync(model_ids, id -> graphIngestor.parseModelTree(id, x -> true)).whenComplete(FutureUtil.logTrace(log, "Setup Completed")).get();
     }
 
 }

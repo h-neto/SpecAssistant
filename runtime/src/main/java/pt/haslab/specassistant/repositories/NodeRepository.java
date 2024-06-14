@@ -55,6 +55,10 @@ public class NodeRepository implements PanacheMongoRepository<Node> {
         return find(new Document("graph_id", graphId)).stream();
     }
 
+    public Stream<Node> streamByGraphIdAndInvalid(ObjectId graphId) {
+        return find(new Document("graph_id", graphId).append("valid", false)).stream();
+    }
+
     public Long getTotalVisitsFromScoredGraph(ObjectId graph_id) {
         return find(new Document("graph_id", graph_id).append("score", new Document("$ne", null))).stream().map(Node::getVisits).map(Integer::longValue).reduce(0L, Long::sum);
     }
@@ -74,4 +78,6 @@ public class NodeRepository implements PanacheMongoRepository<Node> {
     public void addVisits(ObjectId _id, int count) {
         update(new Document("$inc", new Document("visits", count))).where("_id,", _id);
     }
+
+
 }

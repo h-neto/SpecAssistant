@@ -10,10 +10,7 @@ import org.jboss.logging.Logger;
 import pt.haslab.alloyaddons.ExprComplexity;
 import pt.haslab.alloyaddons.ParseUtil;
 import pt.haslab.alloyaddons.UncheckedIOException;
-import pt.haslab.specassistant.data.models.Challenge;
-import pt.haslab.specassistant.data.models.Graph;
-import pt.haslab.specassistant.data.models.Model;
-import pt.haslab.specassistant.data.models.Node;
+import pt.haslab.specassistant.data.models.*;
 import pt.haslab.specassistant.repositories.ChallengeRepository;
 import pt.haslab.specassistant.repositories.EdgeRepository;
 import pt.haslab.specassistant.repositories.ModelRepository;
@@ -130,18 +127,23 @@ public class GraphIngestor {
 
     public CompletableFuture<Void> classifyAllEdges(CompModule world, ObjectId graph_id) {
         return FutureUtil.forEachAsync(edgeRepo.streamByGraphId(graph_id), e -> {
-            Node destNode = nodeRepo.findById(e.getDestination());
-            Node originNode = nodeRepo.findById(e.getOrigin());
-            try {
-                Map<String, Expr> peerParsed = destNode.getParsedFormula(world);
-                Map<String, Expr> originParsed = originNode.getParsedFormula(world);
-
-                e.setEditDistance(ASTEditDiff.getFormulaDistanceDiff(originParsed, peerParsed));
-                e.update();
-            } catch (IllegalStateException e1) {
-                log.warn("Error in edge classification, editDistance will be set to infinity: " + e1.getClass().getSimpleName() + ":" + e1.getMessage());
-            }
+            e.setEditDistance(nodeFormulaDifferences(world, e));
+            e.update();
         });
+    }
+
+    private Float nodeFormulaDifferences(CompModule world, Edge e) {
+        Node destNode = nodeRepo.findById(e.getDestination());
+        Node originNode = nodeRepo.findById(e.getOrigin());
+        try {
+            Map<String, Expr> peerParsed = destNode.getParsedFormula(world);
+            Map<String, Expr> originParsed = originNode.getParsedFormula(world);
+
+            return ASTEditDiff.getFormulaDistanceDiff(originParsed, peerParsed);
+        } catch (IllegalStateException e1) {
+            log.warn("Error in edge classification, editDistance will be set to null: " + e1.getClass().getSimpleName() + ":" + e1.getMessage());
+        }
+        return null;
     }
 
     public void trimDeparturesFromValidNodes(ObjectId graph_id) {
@@ -161,6 +163,43 @@ public class GraphIngestor {
                         }).reduce(0.0, Double::sum));
                         n.update();
                     } catch (IllegalStateException e1) {
+                        log.warn("Error in node classification, complexity will be set to null: " + e1.getClass().getSimpleName() + ":" + e1.getMessage());
+                    }
+                }
+        );
+    }
+
+    public void assignMinimumSolutions(ObjectId graph_id, CompModule base_world) {
+        Map<ObjectId, Map<String, Expr>> parsedSolutions = nodeRepo.streamByGraphIdAndValid(graph_id)
+                .map(x -> {
+                    try {
+                        return Map.entry(x.getId(), x.getParsedFormula(base_world));
+                    } catch (IllegalStateException e) {
+                        log.warn("Error in solution parsing, skipping solution: " + x.getFormula());
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        FutureUtil.forEachAsync(nodeRepo.streamByGraphIdAndInvalid(graph_id),
+                n -> {
+                    try {
+                        final ObjectId[] minSol = {null};
+                        final Double[] ted = {Double.POSITIVE_INFINITY};
+                        Map<String, Expr> formula = n.getParsedFormula(base_world);
+                        parsedSolutions.forEach((k, f) -> {
+                            Double sol_ted = Double.valueOf(ASTEditDiff.getFormulaDistanceDiff(formula, f));
+                            if (sol_ted < ted[0]) {
+                                ted[0] = sol_ted;
+                                minSol[0] = k;
+                            }
+                        });
+                        if (minSol[0] != null) {
+                            n.setMinSolution(minSol[0]);
+                            n.setMinSolutionTed(ted[0]);
+                            n.update();
+                        }
+                    } catch (IllegalStateException e1) {
                         log.warn("Error in node classification, complexity will be set to infinity: " + e1.getClass().getSimpleName() + ":" + e1.getMessage());
                     }
                 }
@@ -168,7 +207,10 @@ public class GraphIngestor {
     }
 
     private CompletableFuture<Void> classify(CompModule base_world, ObjectId graph_id) {
-        return classifyAllEdges(base_world, graph_id).thenRun(() -> assignComplexityToGraphNodes(graph_id, base_world)).thenRun(() -> trimDeparturesFromValidNodes(graph_id));
+        return classifyAllEdges(base_world, graph_id)
+                .thenRun(() -> assignComplexityToGraphNodes(graph_id, base_world))
+                .thenRun(() -> assignMinimumSolutions(graph_id, base_world))
+                .thenRun(() -> trimDeparturesFromValidNodes(graph_id));
     }
 
     public CompletableFuture<Void> parseModelTree(String model_id, Predicate<Model> model_filter) {
